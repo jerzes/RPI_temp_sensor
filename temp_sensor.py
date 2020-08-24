@@ -1,6 +1,12 @@
 import smbus2
 import bme280
+import datetime
 import time
+import logging
+
+log_format = '%(ascitime)s %(levelname)s * %(message)s' 
+logging.basicConfig(filename="tempsensor.log", format=log_format)
+logger = logging.getLogger('tempsensor')
 
 port = 1
 address = 0x76
@@ -8,27 +14,23 @@ bus = smbus2.SMBus(port)
 
 calibration_params = bme280.load_calibration_params(bus, address)
 
-# the sample method will take a single reading and return a
-# compensated_reading object
-#data = bme280.sample(bus, address, calibration_params)
-
-# the compensated_reading class has the following attributes
-#print(data.id)
-#print(data.timestamp)
-#print(data.temperature)
-#print(data.pressure)
-#print(data.humidity)
-
-# there is a handy string representation too
-#print(data)
 
 from influxdb import InfluxDBClient
 
-client = InfluxDBClient(host='localhost', port=8086)
 
-client.switch_database('tempsensor')
+try:
+    client = InfluxDBClient(host='localhost', port=8086)
+except:
+    raise Exception("err")
+    logger.error('database connection error')
+try:
+    client.switch_database('tempsensor')
+except:
+    raise Exception("err")
+    logger.error('database connection error')
 
 while True:
+  stamp = datetime.datetime.utcnow()
   data = bme280.sample(bus, address, calibration_params)
   json_body = [
     {
@@ -36,7 +38,7 @@ while True:
         "tags": {
             "unit": "Celsius"
         },
-        "time": data.timestamp,
+        "time": stamp,
         "fields": {
             "temperature": data.temperature
          }
@@ -45,7 +47,7 @@ while True:
         "tags": {
             "unit": "Percent"
         },
-        "time": data.timestamp,
+        "time": stamp,
         "fields": {
             "humidity": data.humidity
         }
@@ -55,12 +57,15 @@ while True:
         "tags": {
             "unit": "hPa"
             },
-        "time": data.timestamp,
+        "time": stamp,
         "fields": {
             "presure": data.pressure
             }
         } ]
-  print(data)
-  client.write_points(json_body)
-  time.sleep(5)
-
+  
+  try:
+    client.write_points(json_body)
+    time.sleep(5)
+  except:
+    logger.error('cant write to database')
+    time.sleep(20)
